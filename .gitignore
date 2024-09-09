@@ -4,3 +4,5 @@ db/
 # all pycache files in this project
 **/__pycache__/
 *.pyc
+*.db
+*.log
