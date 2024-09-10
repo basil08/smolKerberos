@@ -7,18 +7,11 @@ import os
 import json
 import hashlib
 import base64
-# from utils import decrypt_data
-from caesar import encrypt_data, decrypt_data
+from caesar import decrypt_data
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(message)s", filename="master.log"
 )
-
-def pad_key_to_32_bytes(key):
-    sha256 = hashlib.sha256()
-    sha256.update(key.encode())
-    # return sha256.digest()
-    return base64.urlsafe_b64encode(sha256.digest()[:32])
 
 class ResourceServer:
     def __init__(self, name: str, password: int, port: int):
@@ -65,38 +58,46 @@ class ResourceServer:
 
         @self.app.route("/get_resource_file/<int:resource_id>")
         def get_resource_file(resource_id):
+            
             access_token = request.args.get("access_token")
             username = request.args.get("username")
             service_name = request.args.get("service_name")
+            client_id = request.args.get("client_id")
 
-            # pad_key = pad_key_to_32_bytes(self.password)
-            # f = Fernet(pad_key)
-            # decrypted_access_token = f.decrypt(access_token)
-            # username, service_name = json.loads(decrypted_access_token.decode())
+            print("Debugging access_token", access_token)
+            print("Debugging username", username)
+            print("Debugging service_name", service_name)
+            print("Debugging client_id", client_id)
 
-            decrypted_access_token = decrypt_data(access_token, self.password)
-            #  = decrypted_access_token["username"], decrypted_access_token["service_name"]
+            payload = decrypt_data(access_token, self.password)
 
             print("Username", username)
             print("Service name", service_name)
+            print("Decrypted data", payload)
 
-            print("Decrypted data", decrypted_access_token)
+            decrypted_access_token = self.parse_access_token(payload)
+            print("Parsed access token", decrypted_access_token)
 
-            decrypted_access_token = self.parse_access_token(decrypted_access_token)
             if decrypted_access_token['service_name'] != self.name:
-                return jsonify({"error": "Invalid service name"})
+                return jsonify({"error": "Decrypted service name does not match resource server name. Maybe the decryption process didn't succeed."})
             
             if service_name is None:    
                 return jsonify({"error": "Service name is required"})
             
             if service_name != decrypted_access_token['service_name']:
-                return jsonify({"error": "Invalid service name"})
+                return jsonify({"error": "Invalid service name. Mismatch between service name in packet and decrypted service name."})
             
             if username is None:
                 return jsonify({"error": "Username is required"})
         
             if username != decrypted_access_token['username']:
-                return jsonify({"error": "Invalid username"})
+                return jsonify({"error": "Invalid username. Mismatch between username in packet and decrypted username."})
+            
+            if client_id is None:
+                return jsonify({"error": "Client ID is required"})
+            
+            if client_id != decrypted_access_token['client_id']:
+                return jsonify({"error": "Invalid client ID. Mismatch between client ID in packet and decrypted client ID. Man in the middle attack suspected."})
             
             resource = Resource.query.filter_by(id=resource_id).first()
             if resource is None:

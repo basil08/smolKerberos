@@ -6,7 +6,7 @@ import argparse
 import os
 
 # from utils import encrypt_data
-from caesar import encrypt_data
+from caesar import encrypt_data, decrypt_data
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(message)s", filename="master.log"
@@ -36,7 +36,6 @@ class AuthenticationServer:
         def service_init():
             db.create_all()
 
-
         @self.app.route("/get_access")
         def get_access():
             return jsonify({"status": "Access granted"})
@@ -46,6 +45,13 @@ class AuthenticationServer:
             username = request.args.get('username')
             service_name = request.args.get('service_name')
             password = request.args.get('password')
+            client_id = request.args.get('client_id')
+
+            print("Debugging username", username)
+            print("Debugging service_name", service_name)
+            print("Debugging password", password)
+            print("Debugging client id", client_id)
+
             user = User.query.filter_by(username=username).first()
             if user is None:
                 return jsonify({"error": "User not found"})
@@ -63,7 +69,7 @@ class AuthenticationServer:
             print("service password", service.service_password)
 
             # payload = { 'username': username, 'service_name': service_name }
-            payload = ",".join(["username:" + username, "service_name:" + service_name])
+            payload = ",".join(["username:" + username, "service_name:" + service_name, "client_id:" + client_id])
             token = encrypt_data(payload, service.service_password)
             # print("token", token)
             return jsonify({"access_token": str(token) })

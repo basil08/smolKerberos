@@ -1,5 +1,31 @@
 # smolKerberos - Implementing KerberosV4 from scratch
 
+## metadata
+
+* New resource created response from auth server 
+
+{
+    "data": {
+        "data": "if you're seeing this, then you got the resource yay!",
+        "description": "resource1",
+        "id": 1,
+        "name": "resource1"
+    },
+    "status": "Resource added successfully"
+}
+
+* New user created response from auth server
+
+{
+    "data": {
+        "id": 1,
+        "name": "basil"
+    },
+    "status": "User added successfully"
+}
+
+
+
 ## how to run
 
 run resource server 
