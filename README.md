@@ -48,7 +48,7 @@ In an open network environment, machines that provide services must be able to c
 2. each time i request a new ticket, my password is sent over (possibly compromised) network in cleartext. not good!
 
 # simplications made
-1. There is no network identifier. This will be auto-assigned to each user client and used in the access token along with username and service_name.
+1. ~~There is no network identifier. This will be auto-assigned to each user client and used in the access token along with username and service_name.~~ Added a barebone client program which randomly generates a client_id to simulate the idea of an immutable network identifier.
 
 Format of the access token
 key:value,key:value,key:value,...

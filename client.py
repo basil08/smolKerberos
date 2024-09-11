@@ -1,4 +1,3 @@
-import json
 import argparse
 import requests
 import random

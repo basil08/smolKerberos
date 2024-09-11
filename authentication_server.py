@@ -6,7 +6,7 @@ import argparse
 import os
 
 # from utils import encrypt_data
-from caesar import encrypt_data, decrypt_data
+from caesar import encrypt_data
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(message)s", filename="master.log"
