@@ -1,3 +1,5 @@
+
+import time
 from flask import Flask, jsonify, request
 
 from models.models import db, Service, Resource
@@ -41,7 +43,11 @@ class ResourceServer:
     def parse_access_token(self, token):
         fields = token.split(",")
         # return { f.split(":") for f in fields }
-        return { f.split(":")[0]: f.split(":")[1] for f in fields }
+        try:
+            token = { f.split(":")[0]: f.split(":")[1] for f in fields }
+        except IndexError:
+            return None
+        return token
         
     def setup_routes(self):
 
@@ -75,6 +81,9 @@ class ResourceServer:
             decrypted_access_token = self.parse_access_token(payload)
             print("Parsed access token", decrypted_access_token)
 
+            if decrypted_access_token is None:
+                return jsonify({"error": "Invalid service token"})
+
             if decrypted_access_token['service_name'] != self.name:
                 return jsonify({"error": "Decrypted service name does not match resource server name. Maybe the decryption process didn't succeed."})
             
@@ -96,6 +105,13 @@ class ResourceServer:
             if client_id != decrypted_access_token['client_id']:
                 return jsonify({"error": "Invalid client ID. Mismatch between client ID in packet and decrypted client ID. Man in the middle attack suspected."})
             
+            # get current time in seconds since epoch
+            current_timestamp_in_seconds_since_epoch = int(time.time())
+            # check if token is invalid
+            if int(current_timestamp_in_seconds_since_epoch) - int(decrypted_access_token.get("timestamp")) > int(decrypted_access_token.get("lifespan")):
+                print("Service token has expired. Please get a new service token.")
+                return jsonify({"error": "Service token expired. Please get a new service token."})
+
             resource = Resource.query.filter_by(id=resource_id).first()
             if resource is None:
                 return jsonify({"error": "Resource not found"})

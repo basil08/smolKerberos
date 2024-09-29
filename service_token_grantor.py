@@ -4,19 +4,31 @@ from models.models import db, Service, Resource, User
 import logging
 import argparse
 import os
+import json
+import time
 
 # from utils import encrypt_data
-from caesar import encrypt_data
+from caesar import encrypt_data, decrypt_data
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(message)s", filename="master.log"
 )
 
-class AuthenticationServer:
+def parse_decrypted_token(token):
+    fields = token.split(",")
+    return { f.split(":")[0]: f.split(":")[1] for f in fields }
+
+
+class ServiceTokenGrantor:
     def __init__(self, name, port):
         self.name = name
         self.app = Flask(self.name)
         self.port = port
+        
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            self.password = config.get("service_token_grantor_password")
+            self.lifespan = config.get("lifespan")
 
         basedir = os.path.abspath(os.path.dirname(__file__))
         self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'kerberos.db')
@@ -40,36 +52,67 @@ class AuthenticationServer:
         def get_access():
             return jsonify({"status": "Access granted"})
         
-        @self.app.route("/get_access_token")
-        def get_access_token():
+        @self.app.route("/get_service_token")
+        def get_service_token():
             username = request.args.get('username')
             service_name = request.args.get('service_name')
-            password = request.args.get('password')
             client_id = request.args.get('client_id')
+            auth_token = request.args.get('auth_token')
 
             print("Debugging username", username)
             print("Debugging service_name", service_name)
-            print("Debugging password", password)
             print("Debugging client id", client_id)
+            print("Debugging auth token", auth_token)
 
             user = User.query.filter_by(username=username).first()
             if user is None:
                 return jsonify({"error": "User not found"})
-            password = int(password)
+            # password = int(password)
             ## ideally this should be hashed but this is a educational project
-            if user.password != password:
-                return jsonify({"error": "Invalid password"})
+            # if user.password != password:
+            #     return jsonify({"error": "Invalid password"})
 
+            # try to decrypt the auth token and match the service_token_grantor_password with own password (so we know that this auth token came from the auth server)
+            try:
+                decrypted_token = decrypt_data(auth_token, user.password)
+                print("Decrypted token", decrypted_token)
+            except Exception as e:
+                print("Unable to decrypt auth token", e)
+                return jsonify({"error": "Unable to decrypt auth token"})
+            
+            payload = parse_decrypted_token(decrypted_token)
+
+            if int(payload.get("service_token_grantor_password")) != self.password:
+                print("service token grantor password does not match with self.password")
+                return jsonify({"error": "Invalid auth token"})
+            
             if service_name is None:
                 return jsonify({"error": "Service name is required"})
             service = Service.query.filter_by(service_name=service_name).first()
             if service is None:
                 return jsonify({"error": "Service not found"})
-            
-            print("service password", service.service_password)
+            # print("service password", service.service_password)
 
+            if username is None:
+                return jsonify({"error": "Username is required"})
+            
+            if client_id is None:
+                return jsonify({"error": "Client ID is required"})
+            
+            if username != payload.get("username"):
+                return jsonify({"error": "Invalid username. Mismatch between username in packet and decrypted username."})
+            
+            if client_id != payload.get("client_id"):
+                return jsonify({"error": "Invalid client ID. Mismatch between client ID in packet and decrypted"})
+            
+            # get current time in seconds since epoch
+            current_timestamp_in_seconds_since_epoch = str(int(time.time()))
+            # check if token is valid
+            if int(current_timestamp_in_seconds_since_epoch) - int(payload.get("timestamp")) > int(payload.get("lifespan")):
+                return jsonify({"error": "Auth token expired. Please reauthenticate"})
+            
             # payload = { 'username': username, 'service_name': service_name }
-            payload = ",".join(["username:" + username, "service_name:" + service_name, "client_id:" + client_id])
+            payload = ",".join(["username:" + username, "service_name:" + service_name, "client_id:" + client_id, "timestamp:" + str(current_timestamp_in_seconds_since_epoch), "lifespan:" + str(self.lifespan)])
             token = encrypt_data(payload, service.service_password)
             # print("token", token)
             return jsonify({"access_token": str(token) })
@@ -151,7 +194,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        app_instance = AuthenticationServer(args.name, args.port)
+        app_instance = ServiceTokenGrantor(args.name, args.port)
         app_instance.run()
     except Exception as e:
         logging.error("Error in running the service: {}".format(e))
