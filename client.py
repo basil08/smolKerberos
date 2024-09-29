@@ -2,9 +2,9 @@ import argparse
 import requests
 import random
 
-from caesar import decrypt_data
+from caesar import decrypt_data, encrypt_data
 
-def get_auth_token(username, auth_server, client_id):
+def get_auth_packet(username, auth_server, client_id):
     """
     Get the auth token from the auth server
 
@@ -17,17 +17,22 @@ def get_auth_token(username, auth_server, client_id):
     if response.status_code != 200:
         return None
     # get the auth token from the response
-    auth_token = response.json().get("auth_token")
+    auth_packet = response.json().get("auth_packet")
     # return the auth token
-    return auth_token
+    return auth_packet
 
-def get_service_token(username, auth_token, resource_serv_name, sgt_server_url, client_id):
+def get_service_packet(username, auth_token, resource_serv_name, sgt_server_url, client_id, authenticator):
     # create a dictionary with the username and password
+
+    # authenticator = decrypt_data(auth_token, int(password))
+
+    
     data = {
         "username": username,
         "service_name": resource_serv_name,
         "client_id": client_id,
-        "auth_token": auth_token
+        "auth_token": auth_token,
+        "authenticator": authenticator
     }
 
     print("Debug data", data)
@@ -44,9 +49,10 @@ def get_service_token(username, auth_token, resource_serv_name, sgt_server_url, 
     # get the access token from the response
     res_data = response.json()
     print("Debug response", res_data)
-    access_token = res_data.get("access_token")
+    service_packet = res_data.get("service_packet")
     # return the access token
-    return access_token
+
+    return service_packet
     
 
 def main(args):
@@ -72,6 +78,9 @@ def main(args):
     if not resource_server:
         resource_server = "http://localhost:5050"
         print("[+] Using default resource server URL:", resource_server)
+    
+    auth_session_key = None
+    service_session_key = None
 
     while True:
         # get the message from the user
@@ -88,10 +97,10 @@ def main(args):
             continue
         
         if command == "gat":
-            auth_token = get_auth_token(username, auth_server, client_id)
+            auth_packet = get_auth_packet(username, auth_server, client_id)
 
-            if auth_token is None:
-                print("Cannot get auth token. Please check your username. Maybe the auth server is down or contact your network admin")
+            if auth_packet is None:
+                print("Cannot get auth packet. Please check your username. Maybe the auth server is down or contact your network admin")
                 continue
 
             password = input("Enter password: ")
@@ -101,10 +110,21 @@ def main(args):
                 continue
             
             # decrypt the auth token using user password
-            data = decrypt_data(auth_token, int(password))
-            print("Debug Decrypted data", data)
+            data = decrypt_data(auth_packet, int(password))
+            fields = data.split("|")
+            parsed_packet = { f.split(":")[0]: f.split(":")[1] for f in fields }
+            auth_token = parsed_packet.get("auth_token")
+
             print("auth token")
             print(auth_token)
+            auth_session_key = parsed_packet.get("auth_session_key")
+            print("auth session key")
+            print(auth_session_key)
+
+            decrypted_token = decrypt_data(auth_token, int(password))
+            print("decrypted token")
+            print(decrypted_token)
+
         elif command == 'gst':
             print("Getting service token")
             try:
@@ -115,8 +135,24 @@ def main(args):
             except IndexError:
                 print("Usage: gst: gst <resource server name> <client id> <auth token>")
                 continue
-                
-            service_token = get_service_token(username, auth_token, resource_serv_name, sgt_server_url, client_id)
+            
+            if auth_session_key is None:
+                print("No auth_session_key set. You must run 'gat' command first before running 'gst' command")
+                continue
+
+            authenticator = {
+                "username": username,
+                "client_id": client_id,
+            }
+
+            # parse authenticator into a string
+            authenticator = ",".join([f"{k}:{v}" for k, v in authenticator.items()])
+
+            authenticator = encrypt_data(authenticator, int(auth_session_key))
+
+            
+
+            service_token = get_service_packet(username, auth_token, resource_serv_name, sgt_server_url, client_id, authenticator)
             if service_token is None:
                 print("Cannot get service token. Please check your username. Maybe the auth server is down or contact your network admin")
                 continue
@@ -125,35 +161,65 @@ def main(args):
             #     continue
             print("Service token")
             print(service_token)
+
+            decrypted_service_token = decrypt_data(service_token, int(auth_session_key))
+            print("Decrypted service token")
+            print(decrypted_service_token)
+
+            # parse decrypted session token into a dict
+            fields = decrypted_service_token.split("|")
+            parsed_service_token = { f.split(":")[0]: f.split(":")[1] for f in fields }
+            service_session_key = parsed_service_token.get("service_session_key")
+            service_token = parsed_service_token.get("service_token")
+            print("Service session key")
+            print(service_session_key)
+            print("Service token")
+            print(service_token)
         elif command == "exit":
             print("Exiting client")
             break
         elif command == "get":
             print("Getting resource")
             try:
-                access_token = params[0]
-                resource_serv_name = params[1]
-                resource_id = params[2]
+                resource_serv_name = params[0]
+                resource_id = params[1]
+                access_token = params[2]
             except IndexError:
-                print("Usage: get: get <access token> <resource server name> <resource id>")
+                print("Usage: get: get <resource server name> <resource id>  <access token>")
                 continue
             except UnboundLocalError:
-                print("Usage: get: get <access token> <resource server name> <resource id>")
+                print("Usage: get: get <resource server name> <resource id> <access token>")
                 continue
+
+            authenticator = {
+                "username": username,
+                "client_id": client_id,
+            }
+
+            if service_session_key is None:
+                print("No service_session_key set. You must run 'gst' command first before running 'get' command")
+                continue
+
+            # parse authenticator into a string
+            authenticator = ",".join([f"{k}:{v}" for k, v in authenticator.items()])
+            authenticator = encrypt_data(authenticator, int(service_session_key))
+
             data = {
                 "access_token": access_token,
                 "username": username,
                 "service_name": resource_serv_name,
                 "resource_id": resource_id,
-                "client_id": client_id
+                "client_id": client_id,
+                "authenticator": authenticator
             }
+
+
             print("Debug pinging ", f"{resource_server}/get_resource_file/{resource_id}")
             response = requests.get(f"{resource_server}/get_resource_file/{resource_id}", params=data)
 
             if response.status_code != 200:
                 print("error", response)
                 # return { 'error': response }
-
                 continue
             
             print(response.json())

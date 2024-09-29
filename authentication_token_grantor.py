@@ -1,3 +1,4 @@
+import random
 from flask import Flask, jsonify, request
 
 from models.models import db, Service, Resource, User
@@ -24,9 +25,9 @@ class AuthenticationTokenGrantor:
         with open("config.json", "r") as f:
             config = json.load(f)
             self.lifespan = config.get("lifespan")
-            self.service_token_grantor_password = config.get(
-                "service_token_grantor_password"
-            )
+            # self.service_token_grantor_password = config.get(
+            #     "service_token_grantor_password"
+            # )
 
         basedir = os.path.abspath(os.path.dirname(__file__))
         self.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
@@ -84,19 +85,38 @@ class AuthenticationTokenGrantor:
             # payload = { 'username': username, 'service_name': service_name }
             current_timestamp_in_seconds_since_epoch = str(int(time.time()))
 
-            payload = ",".join(
+            auth_session_key = random.randint(10000, 1000000)
+
+            auth_token = ",".join(
                 [
                     "username:" + username,
                     "client_id:" + client_id,
                     "timestamp:" + str(current_timestamp_in_seconds_since_epoch),
                     "lifespan:" + str(self.lifespan),
-                    "service_token_grantor_password:"
-                    + str(self.service_token_grantor_password),
+                    "auth_session_key:"
+                    + str(auth_session_key),
                 ]
             )
-            token = encrypt_data(payload, user.password)
+            token = encrypt_data(auth_token, user.password)
+            print("Encrypted token", token)
+
+            auth_packet = "|".join(
+                [
+                "auth_token:" + token,
+                "auth_session_key:" + str(auth_session_key),
+                ]
+            )
+
+            print("Auth packet", auth_packet)
+
+            encrypted_auth_packet = encrypt_data(auth_packet, user.password)
+
+            print("Encrypted auth packet", encrypted_auth_packet)
+
             # print("token", token)
-            return jsonify({"auth_token": str(token)})
+            # return jsonify({"auth_token": str(token)})
+            return jsonify({"auth_packet": str(encrypted_auth_packet)})
+            # return jsonify(encrypted_auth_packet)
 
         @self.app.route("/get_service_name")
         def get_service_name():

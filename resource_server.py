@@ -66,11 +66,21 @@ class ResourceServer:
             username = request.args.get("username")
             service_name = request.args.get("service_name")
             client_id = request.args.get("client_id")
+            authenticator = request.args.get("authenticator")
 
             print("Debugging access_token", access_token)
             print("Debugging username", username)
             print("Debugging service_name", service_name)
             print("Debugging client_id", client_id)
+
+            #  data = {
+            #     "access_token": access_token,
+            #     "username": username,
+            #     "service_name": resource_serv_name,
+            #     "resource_id": resource_id,
+            #     "client_id": client_id,
+            #     "authenticator": authenticator
+            # }
 
             payload = decrypt_data(access_token, self.password)
 
@@ -81,11 +91,27 @@ class ResourceServer:
             decrypted_access_token = self.parse_access_token(payload)
             print("Parsed access token", decrypted_access_token)
 
+            if authenticator is None:
+                return jsonify({"error": "Authenticator is required"})
+            
             if decrypted_access_token is None:
                 return jsonify({"error": "Invalid service token"})
 
             if decrypted_access_token['service_name'] != self.name:
                 return jsonify({"error": "Decrypted service name does not match resource server name. Maybe the decryption process didn't succeed."})
+
+            if decrypted_access_token['service_session_key'] is None:
+                return jsonify({"error": "Service session key is required. Not found in service token"})
+            
+            # try to decrypt the authenticator
+            decrypted_authenticator = decrypt_data(authenticator, int(decrypted_access_token['service_session_key']))
+            print("Decrypted authenticator", decrypted_authenticator)
+            # parse the authenticator into a dict
+            fields = decrypted_authenticator.split(",")
+            parsed_authenticator = { f.split(":")[0]: f.split(":")[1] for f in fields }
+            print("Parsed authenticator", parsed_authenticator)
+
+            
             
             if service_name is None:    
                 return jsonify({"error": "Service name is required"})
@@ -112,6 +138,13 @@ class ResourceServer:
                 print("Service token has expired. Please get a new service token.")
                 return jsonify({"error": "Service token expired. Please get a new service token."})
 
+
+            if parsed_authenticator['username'] != username:
+                return jsonify({"error": "Invalid username. Mismatch between username in authenticator and username in access token."})
+            
+            if parsed_authenticator['client_id'] != client_id:
+                return jsonify({"error": "Invalid client ID. Mismatch between client ID in authenticator and client ID in access token."})
+            
             resource = Resource.query.filter_by(id=resource_id).first()
             if resource is None:
                 return jsonify({"error": "Resource not found"})
